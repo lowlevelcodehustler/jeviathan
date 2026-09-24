@@ -1,0 +1,20 @@
+# RTX 5090 (32GB VRAM) — production tier.
+# Serve Qwen3.8-27B with vLLM first: see scripts/setup_5090.sh
+#   preferred: Inferact/Qwen3.8-27B-NVFP4  (~24.6 GiB, fits one Blackwell GPU)
+#   fallback:  Qwen/Qwen3.8-27B-FP8        (official fine-grained FP8)
+backend:
+  type: openai_compatible
+  base_url: http://localhost:8001/v1
+  model: jevitan-qwen3.8-27b   # --served-model-name alias from setup_5090.sh
+  timeout_s: 120
+sampling:
+  temperature: 0.0
+  top_p: 1.0
+  max_tokens: 4096
+calibration:
+  enabled: true
+  path: calibration/calib.json
+limits:
+  max_questions: 64
+  max_options_per_choice: 255
+  max_state_chars: 32000

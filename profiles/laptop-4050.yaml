@@ -1,0 +1,23 @@
+# RTX 4050 Laptop (6GB VRAM) — dev/test tier.
+# Backend options (pick one):
+#   A) Ollama:            ollama pull llama3.1:8b          -> http://localhost:11434/v1
+#   B) Local weights shim: python scripts/transformers_server.py
+#                          --model-dir E:\bfc-today-test-weights\model_run  (4-bit, ~5GB VRAM)
+backend:
+  type: openai_compatible
+  base_url: http://localhost:11434/v1
+  model: llama3.1:8b
+  # Laptop GPU generation is slow (minutes per pass) — be patient.
+  timeout_s: 900
+  max_retries: 2
+sampling:
+  temperature: 0.0
+  top_p: 1.0
+  # Keep JSON answers tight; the laptop GPU is power-limited (~1-2 tok/s).
+  max_tokens: 768
+calibration:
+  enabled: false
+limits:
+  max_questions: 32
+  max_options_per_choice: 64
+  max_state_chars: 16000

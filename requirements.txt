@@ -1,0 +1,15 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+pydantic>=2.7
+PyYAML>=6
+numpy>=1.26
+
+# --- optional: local 4-bit transformers server (laptop, scripts/transformers_server.py) ---
+# torch>=2.4
+# transformers>=4.45
+# bitsandbytes>=0.44
+
+# --- dev ---
+pytest>=8
+pytest-asyncio>=0.23

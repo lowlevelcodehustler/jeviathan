@@ -1,0 +1,38 @@
+services:
+  jevitan:
+    build: .
+    ports:
+      - "8100:8100"
+    environment:
+      JEVIATHAN_PROFILE: ${JEVIATHAN_PROFILE:-laptop-4050}
+      # Point at a model server outside this compose file if needed:
+      # JEVIATHAN_BASE_URL: http://host.docker.internal:8001/v1
+    depends_on: []
+
+  # Production tier on the RTX 5090 box (run with --profile vllm):
+  vllm:
+    image: vllm/vllm-openai:latest
+    profiles: ["vllm"]
+    command:
+      - serve
+      - Inferact/Qwen3.8-27B-NVFP4
+      - --served-model-name
+      - jevitan-qwen3.8-27b
+      - --max-model-len
+      - "32768"
+      - --kv-cache-dtype
+      - fp8
+    ports:
+      - "8001:8000"
+    volumes:
+      - hf-cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  hf-cache:
