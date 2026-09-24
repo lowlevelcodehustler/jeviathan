@@ -6,3 +6,4 @@ calibration/*.json
 !calibration/.gitkeep
 *.log
 *.pid
+calibration/raw-*.jsonl
