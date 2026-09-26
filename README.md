@@ -52,6 +52,21 @@ The payoff: when real Jev access lands, you flip one config line and A/B the two
 | **Laptop 4050 (6GB)** — dev/test | Llama-3.1-8B-Instruct Q4 (~4.9GB) via Ollama, or your existing local weights (`E:\bfc-today-test-weights\model_run`) via `scripts/transformers_server.py` in NF4 | Zero-download option already on disk; 6GB VRAM caps you at ~8B-class |
 | Future | Qwen3.8-Max class (2.4T / 95B active, open weights) | Multi-GPU or cloud; revisit when it lands |
 
+## Sampling strategies (v1.1)
+
+`profiles/*.yaml → sampling.strategy` picks how distributions are produced:
+
+| Strategy | How it works | When to use |
+|---|---|---|
+| `one_shot` (default) | One completion returns a JSON object of self-reported probabilities; the parse + repair ladder normalizes them. | Any OpenAI-compatible server, long criteria text, small models that wobble on strict single-label output. |
+| `logprob` | Per-option prefix scoring: prefill the assistant turn with each option label and read the mean logprob of that span (one forward pass per option); softmax across options → distribution. The open-weight analogue of Jev's parallel sampler — probabilities come from the model's own token scores, not self-report. | vLLM/SGLang/our shim; short option labels; when you want truer distributions. Falls back to `one_shot` automatically if the server can't do assistant-prefill + logprobs. |
+
+Smoke-test a serving stack end-to-end (also your first move on the 5090 box):
+
+```bash
+python scripts/smoke_logprob.py rtx5090   # usage.input_tokens null => real logprob path ran
+```
+
 ## Quickstart — RTX 5090 box
 
 ```bash
@@ -135,6 +150,8 @@ JEVIATHAN_PROFILE=rtx5090 python -m jeviathan.calibration.cli fit \
 
 3. The `rtx5090` profile already points at `calibration/calib.json` with `enabled: true` — restart the API and confidence is now outcome-calibrated, which is what makes TriniGard-style thresholds meaningful.
 
+Crash recovery: each row's full response is appended to `calibration/raw-<profile>.jsonl`; re-run with `--resume` to skip rows already collected (the laptop GPU takes minutes per row), or refit instantly from the dump with `--from-raw <file>`.
+
 ## TriniGard integration (the meld, part two)
 
 Jeviathan speaks TypeSafe's contract, so TriniGard gets a new provider adapter (`core/adapters/jevitan.py`) that:
@@ -143,6 +160,28 @@ Jeviathan speaks TypeSafe's contract, so TriniGard gets a new provider adapter (
 - logs every decision through the existing WAL audit trail (HMAC-signed, SOC2 exportable).
 
 Cascade pattern: **Jeviathan front door** (classify/route at ~$0 cost, <1s locally) → ordinary code for deterministic cases → full multi-source verification engine for flagged claims. When real Jev access arrives: same adapter, `JEVIATHAN_BASE_URL` pointed at the TypeSafe API — instant A/B.
+
+## Proven live (2026-09-25, v1.1 logprob on laptop tier)
+
+`strategy: logprob` against the NF4 Llama shim — 12 scoring calls per row in ~90 s (vs ~5 min for one_shot), and smoother distributions than self-reported JSON:
+
+```json
+"claim_supported": {"type":"noul","noul":0.468791},
+"risk_level":      {"type":"score","score":0.6139,"confidence":0.416296,
+                    "probabilities":{"low":0.610864,"medium":0.164412,"high":0.224724}},
+"vertical":        {"type":"choice","choice":"healthcare","confidence":0.925165,
+                    "probabilities":{"healthcare":0.935855,"aviation":0.021986,...}}
+```
+
+Demo calibration fit (`profiles/laptop-4050-logprob.yaml`, 12 TriniGard-vertical claims):
+
+| type | n | Platt a, b | ECE raw → calibrated |
+|---|---|---|---|
+| choice | 12 | +2.20, +0.58 | 0.074 → **0.004** |
+| score | 12 | +2.08, −1.79 | 0.247 → **0.079** |
+| noul | 12 | +3.24, −0.99 | 0.199 → **0.019** |
+
+Artifact: `calibration/calib-laptop-demo.json` (refit anytime with `--from-raw calibration/raw-laptop-logprob.jsonl`). The real artifact is the same fit on the 5090 box's Qwen3.8.
 
 ## Proven live (2026-09-23, laptop tier)
 
@@ -172,8 +211,8 @@ All three answers semantically correct for a double-charge refund ticket; confid
 
 ## Roadmap
 
-- **v1.1 — logprob scoring:** replace self-reported JSON probabilities with per-option token-logprob softmax (vLLM `logprobs`) for a truer "parallel sampler" distribution; keep Strategy-A as fallback for long criteria text.
-- **v1.2 — TriniGard adapter + cascade** in the TriniGard repo.
+- **v1.1 — logprob scoring (done 2026-09-25):** per-option prefix probabilities with one_shot fallback; shim prefill support; laptop demo fit above. Verify live on the 5090 box with `scripts/smoke_logprob.py`.
+- **v1.2 — TriniGard adapter + cascade (done, in the TriniGard repo):** `core/adapters/jevitan.py`, weight 0.95 in ConfidenceScorer, judgment-aware discrepancy counting.
 - **v2 — RLCD-lite SFT:** fine-tune Qwen3.8 (LoRA) on synthetic System One data generated from TriniGard's verified decision logs, then re-fit calibration. This is where "knock-off" becomes "close enough to matter."
 - **Watch:** real Jev waitlist access → A/B harness; Qwen3.8-Max open weights (2.4T/95B) for a multi-GPU tier.
 
@@ -187,8 +226,8 @@ jeviathan/            # the package
   confidence/         # TypeSafe's exact confidence formula
   calibration/        # Platt fit/apply + CLI (RLCD-lite)
   engine/             # orchestration: validate -> compile -> call -> calibrate
-profiles/             # laptop-4050.yaml, rtx5090.yaml
-scripts/              # setup_5090.sh, setup_laptop.ps1, transformers_server.py
+profiles/             # laptop-4050.yaml, laptop-4050-logprob.yaml, rtx5090.yaml
+scripts/              # setup_5090.sh, setup_laptop.ps1, transformers_server.py, smoke_logprob.py
 evals/sample_eval.jsonl
 tests/                # GPU-free test suite (mock backend)
 ```

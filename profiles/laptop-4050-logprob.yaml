@@ -1,0 +1,22 @@
+# RTX 4050 Laptop (6GB VRAM) — dev/test tier, v1.1 logprob strategy.
+# Same backend as laptop-4050.yaml but scores per-option prefixes instead of
+# one JSON pass (~90s/row vs ~5min on the power-capped GPU). Use for the demo
+# calibration fit and to exercise the logprob path locally before 5090.
+backend:
+  type: openai_compatible
+  base_url: http://localhost:8200/v1
+  model: llama3.1-8b-local
+  timeout_s: 900
+  max_retries: 2
+sampling:
+  temperature: 0.0
+  top_p: 1.0
+  # one_shot fallback tail (only used if the shim's prefill/logprobs fails).
+  max_tokens: 768
+  strategy: logprob
+calibration:
+  enabled: false
+limits:
+  max_questions: 32
+  max_options_per_choice: 64
+  max_state_chars: 16000

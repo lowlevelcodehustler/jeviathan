@@ -70,17 +70,34 @@ async def _collect(
     engine: SystemOneEngine,
     rows: list[dict],
     raw_out: str | None = None,
+    resume: bool = False,
 ) -> tuple[dict[str, list[tuple[float, int]]], dict[str, str]]:
     """Run every eval row through the engine; return (pairs by qid, type by qid).
 
     With raw_out set, each row's full response is appended to a JSONL file so
     later refits can reuse it via --from-raw without another model pass.
+    With resume set, rows whose state already appears in the raw file are
+    skipped (crash recovery — the laptop GPU takes minutes per row).
     """
     collected: dict[str, list[tuple[float, int]]] = defaultdict(list)
     qtype_by_qid: dict[str, str] = {}
+    skip_states: set[str] = set()
+    if resume and raw_out and Path(raw_out).exists():
+        with open(raw_out, "r", encoding="utf-8") as fh:
+            for line in fh:
+                if not line.strip():
+                    continue
+                try:
+                    skip_states.add(json.loads(line)["state"])
+                except (json.JSONDecodeError, KeyError):
+                    pass
+        print(f"Resuming: {len(skip_states)} rows already in {raw_out}", flush=True)
     raw_fh = open(raw_out, "a", encoding="utf-8") if raw_out else None
     try:
         for i, row in enumerate(rows):
+            if resume and row["state"] in skip_states:
+                print(f"  row {i + 1}/{len(rows)} skipped (already collected)", flush=True)
+                continue
             req = SystemOneRequest(state=row["state"], questions=row["questions"])
             resp = await engine.system_one(req)
             labels = row.get("labels") or {}
@@ -142,7 +159,9 @@ async def _run(args: argparse.Namespace) -> None:
         rows = load_eval_rows(args.data)
         print(f"Collected {len(rows)} eval rows from {args.data}")
         raw_out = args.raw_out or f"calibration/raw-{profile.name}.jsonl"
-        collected, qtype_by_qid = await _collect(engine, rows, raw_out=raw_out)
+        collected, qtype_by_qid = await _collect(
+            engine, rows, raw_out=raw_out, resume=args.resume
+        )
 
     params: dict[str, dict[str, float]] = {}
     report_lines = []
@@ -211,6 +230,11 @@ def main() -> None:
         "--raw-out",
         default=None,
         help="Where to append raw responses (default: calibration/raw-<profile>.jsonl)",
+    )
+    fit_p.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip eval rows already present in the raw-out file (crash recovery)",
     )
     fit_p.add_argument("--profile", default=None, help="Profile name (default: active)")
     fit_p.add_argument(

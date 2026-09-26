@@ -7,8 +7,9 @@ backend:
   type: openai_compatible
   base_url: http://localhost:11434/v1
   model: llama3.1:8b
-  # Laptop GPU generation is slow (minutes per pass) — be patient.
-  timeout_s: 900
+  # Laptop GPU generation is slow (minutes per pass; worst case a full
+  # max_tokens eot_id loop at ~1 tok/s) — be very patient.
+  timeout_s: 1800
   max_retries: 2
 sampling:
   temperature: 0.0
