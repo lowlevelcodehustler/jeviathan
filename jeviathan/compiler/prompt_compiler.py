@@ -90,40 +90,50 @@ def _first_balanced_object(text: str) -> str | None:
     return text[start : end + 1] if end > start else None
 
 
+SCORING_SYSTEM_PROMPT = """You are Jeviathan, a System One decision model. You evaluate the STATE and answer ONE question by outputting exactly one option label from its options — nothing else: no punctuation, no quotes, no explanation. Judge literally using only the STATE."""
+
+
 def _render_state(state: Any) -> str:
     if isinstance(state, str):
         return state.strip()
     return json.dumps(state, ensure_ascii=False)
 
 
+def _question_payload(qid: str, q) -> dict[str, Any]:
+    if isinstance(q, ChoiceQuestion):
+        options = [
+            {"name": name, "description": desc} for name, desc in q.criteria.items()
+        ]
+    elif isinstance(q, ScoreQuestion):
+        names = q.level_names()
+        options = [
+            {"name": n, "description": lv.description or ""}
+            for n, lv in zip(names, q.levels)
+        ]
+    else:  # NoulQuestion
+        options = [
+            {"name": "true", "description": None},
+            {"name": "false", "description": None},
+        ]
+    return {
+        "id": qid,
+        "type": q.type,
+        "instructions": q.instructions,
+        "options": options,
+    }
+
+
+def compile_scoring_user_message(state: Any, qid: str, q) -> str:
+    """Single-question prompt for the logprob strategy (ends before ANSWER:)."""
+    return (
+        f"STATE:\n{_render_state(state)}\n\n"
+        f"QUESTION:\n{json.dumps(_question_payload(qid, q), ensure_ascii=False)}"
+    )
+
+
 def compile_request(req: SystemOneRequest) -> tuple[str, str]:
     """Return (system_prompt, user_message) for one decision pass."""
-    questions_payload = []
-    for qid, q in req.questions.items():
-        if isinstance(q, ChoiceQuestion):
-            options = [
-                {"name": name, "description": desc} for name, desc in q.criteria.items()
-            ]
-        elif isinstance(q, ScoreQuestion):
-            names = q.level_names()
-            options = [
-                {"name": n, "description": lv.description or ""}
-                for n, lv in zip(names, q.levels)
-            ]
-        else:  # NoulQuestion
-            options = [
-                {"name": "true", "description": None},
-                {"name": "false", "description": None},
-            ]
-        questions_payload.append(
-            {
-                "id": qid,
-                "type": q.type,
-                "instructions": q.instructions,
-                "options": options,
-            }
-        )
-
+    questions_payload = [_question_payload(qid, q) for qid, q in req.questions.items()]
     user = (
         f"STATE:\n{_render_state(req.state)}\n\n"
         f"QUESTIONS:\n{json.dumps(questions_payload, ensure_ascii=False)}"

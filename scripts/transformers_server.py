@@ -86,7 +86,20 @@ def models() -> dict:
 @app.post("/v1/chat/completions")
 def chat_completions(body: dict) -> dict:
     """Sync endpoint on purpose: FastAPI runs it in a worker thread so the
-    event loop stays free while (slow) generation is in flight."""
+    event loop stays free while (slow) generation is in flight.
+
+    v1.1 additions (logprob strategy support):
+      * assistant-prefill — if the last message has role "assistant", its
+        content is treated as an already-written prefix of the reply;
+      * logprobs — with "logprobs": true, choices[0].logprobs.content carries
+        one entry per prefill token: {token, logprob, bytes, top_logprobs}.
+        The span is scored in a single forward pass over base+prefill; base
+        and prefill are tokenized separately (add_special_tokens=False on the
+        prefill) to avoid BPE boundary issues at the seam. Generated
+        continuation tokens go into message.content as usual.
+    """
+    import re as _re
+
     import torch
 
     model = STATE["model"]
@@ -94,40 +107,100 @@ def chat_completions(body: dict) -> dict:
     messages = body.get("messages", [])
     max_tokens = int(body.get("max_tokens") or 1024)
     temperature = float(body.get("temperature") if body.get("temperature") is not None else 0.7)
+    want_logprobs = bool(body.get("logprobs"))
+    top_k = max(0, int(body.get("top_logprobs") or 0))
+
+    # --- split off an assistant-prefill (last message) ---------------------
+    prefill = ""
+    if messages and messages[-1].get("role") == "assistant":
+        prefill = str(messages[-1].get("content") or "")
+        base_messages = messages[:-1]
+    else:
+        base_messages = messages
 
     text = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
+        base_messages, tokenize=False, add_generation_prompt=True
     )
-    inputs = tokenizer(text, return_tensors="pt").to(model.device)
+    base_inputs = tokenizer(text, return_tensors="pt").to(model.device)
+    base_len = int(base_inputs["input_ids"].shape[1])
+
+    # --- single forward pass over base+prefill -> span logprobs ------------
+    full_ids = base_inputs["input_ids"]
+    span_items: list[dict] | None = None
+    if prefill and want_logprobs:
+        pf_ids = tokenizer(prefill, add_special_tokens=False)["input_ids"]
+        pf_tensor = torch.tensor([pf_ids], device=full_ids.device)
+        full_ids = torch.cat([base_inputs["input_ids"], pf_tensor], dim=1)
+        with torch.inference_mode():
+            out = model(input_ids=full_ids)
+        # Position t predicts token t+1: span tokens occupy positions
+        # base_len..L-1, predicted by logits[base_len-1 .. L-2].
+        span_logits = out.logits[0, base_len - 1 : -1]  # (L_pf, V)
+        span_ids = full_ids[0, base_len:]  # (L_pf,)
+        lp_all = torch.log_softmax(span_logits.float(), dim=-1)
+        span_lp = lp_all.gather(1, span_ids.unsqueeze(1)).squeeze(1).tolist()
+        k = min(max(top_k, 1), int(lp_all.shape[-1]))
+        top_vals, top_idx = torch.topk(lp_all, k=k, dim=-1)
+        span_items = []
+        for tok_id, lp, tv, ti in zip(
+            span_ids.tolist(), span_lp, top_vals.tolist(), top_idx.tolist()
+        ):
+            item: dict = {
+                "token": tokenizer.decode([tok_id]),
+                "logprob": round(lp, 6),
+                "bytes": list(tokenizer.decode([tok_id]).encode("utf-8")),
+            }
+            if k:
+                item["top_logprobs"] = [
+                    {"token": tokenizer.decode([int(t)]), "logprob": round(float(v), 6)}
+                    for t, v in zip(ti, tv)
+                ]
+            span_items.append(item)
+
+    # --- generate the continuation ------------------------------------------
+    # Scoring calls only need a short tail; cap it so a stray large max_tokens
+    # can't burn minutes of laptop GPU time on tokens nobody reads.
+    gen_max = min(max_tokens, 32) if (prefill and want_logprobs) else max_tokens
     with torch.inference_mode():
         gen = model.generate(
-            **inputs,
-            max_new_tokens=max_tokens,
+            input_ids=full_ids,
+            max_new_tokens=max(gen_max, 0),
             do_sample=temperature > 0.01,
             temperature=max(temperature, 1e-2),
             top_p=float(body.get("top_p") or 1.0),
             pad_token_id=tokenizer.eos_token_id,
         )
-    import re as _re
-
-    new_tokens = gen[0][inputs["input_ids"].shape[1]:]
+    new_tokens = gen[0][full_ids.shape[1]:]
     out_text = tokenizer.decode(new_tokens, skip_special_tokens=True)
     # Llama-3.1 quirk: trailing <|eot_id>N</eot_id> index loops after the answer.
     out_text = _re.sub(r"<\|eot_id\|>\d*<\|eot_id\|>", "", out_text)
     out_text = _re.sub(r"</?eot_id>|<\|eot_id\|>", "", out_text)
+
+    if new_tokens.shape[0] == 0:
+        finish_reason = "stop"
+    elif int(new_tokens[-1].item()) == tokenizer.eos_token_id:
+        finish_reason = "stop"
+    else:
+        finish_reason = "length"
+
+    choice: dict = {
+        "index": 0,
+        "message": {"role": "assistant", "content": out_text},
+        "finish_reason": finish_reason,
+    }
+    if want_logprobs and span_items is not None:
+        choice["logprobs"] = {"content": span_items}
 
     return {
         "id": f"chatcmpl-{int(time.time())}",
         "object": "chat.completion",
         "created": int(time.time()),
         "model": body.get("model") or STATE.get("served_name", "local-model"),
-        "choices": [
-            {"index": 0, "message": {"role": "assistant", "content": out_text}, "finish_reason": "stop"}
-        ],
+        "choices": [choice],
         "usage": {
-            "prompt_tokens": int(inputs["input_ids"].shape[1]),
+            "prompt_tokens": int(full_ids.shape[1]),
             "completion_tokens": int(new_tokens.shape[0]),
-            "total_tokens": int(inputs["input_ids"].shape[1] + new_tokens.shape[0]),
+            "total_tokens": int(full_ids.shape[1] + new_tokens.shape[0]),
         },
     }
 

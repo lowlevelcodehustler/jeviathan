@@ -32,6 +32,10 @@ class SamplingConfig:
     temperature: float = 0.0
     top_p: float = 1.0
     max_tokens: int = 2048
+    # "one_shot": single JSON pass (default, works everywhere).
+    # "logprob": per-option prefix scoring via backend logprobs — truer
+    # distributions (the open-weight analogue of Jev's parallel sampler).
+    strategy: str = "one_shot"
 
 
 @dataclass

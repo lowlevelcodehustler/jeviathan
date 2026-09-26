@@ -11,6 +11,10 @@ sampling:
   temperature: 0.0
   top_p: 1.0
   max_tokens: 4096
+  # v1.1: per-option prefix scoring (truer distributions, the open-weight
+  # analogue of Jev's parallel sampler). Falls back to one_shot automatically
+  # if the server can't do assistant-prefill + logprobs — verify empirically.
+  strategy: logprob
 calibration:
   enabled: true
   path: calibration/calib.json

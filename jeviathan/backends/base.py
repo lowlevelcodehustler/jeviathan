@@ -21,5 +21,20 @@ class DecisionBackend(ABC):
     @abstractmethod
     async def complete(self, system_prompt: str, user_message: str) -> CompletionResult: ...
 
+    async def score_prefixes(
+        self,
+        system_prompt: str,
+        user_message: str,
+        prefixes: list[str],
+    ) -> dict[str, float] | None:
+        """Logprob strategy (v1.1): P(prefix | state) for each candidate prefix.
+
+        Returns a normalized distribution over `prefixes`, or None when the
+        backend cannot score logprobs (engine falls back to one_shot).
+        The user_message should end with an "ANSWER:" cue; prefixes are the
+        option labels themselves.
+        """
+        return None  # default: unsupported
+
     async def close(self) -> None:  # pragma: no cover - default no-op
         return None

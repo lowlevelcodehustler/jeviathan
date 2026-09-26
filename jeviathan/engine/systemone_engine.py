@@ -12,7 +12,14 @@ import json
 from ..backends.base import DecisionBackend
 from ..backends.openai_backend import OpenAICompatibleBackend
 from ..calibration.calibrator import Calibrator
-from ..compiler.prompt_compiler import CompileError, compile_request, parse_answers
+from ..compiler.prompt_compiler import (
+    SCORING_SYSTEM_PROMPT,
+    CompileError,
+    compile_request,
+    compile_scoring_user_message,
+    expected_options,
+    parse_answers,
+)
 from ..confidence.derive import argmax, distribution_confidence, score_expectation
 from ..config import Profile
 from ..schemas.typesafe import (
@@ -71,15 +78,46 @@ class SystemOneEngine:
                     f"{limits.max_options_per_choice}"
                 )
 
+    async def _logprob_pass(
+        self, req: SystemOneRequest
+    ) -> dict[str, dict[str, float]] | None:
+        """v1.1 logprob strategy: per-option prefix scoring (one forward pass
+        per option). Returns raw distributions, or None to fall back to one_shot.
+        """
+        dists: dict[str, dict[str, float]] = {}
+        for qid, q in req.questions.items():
+            prefixes = expected_options(req)[qid]
+            user_message = compile_scoring_user_message(req.state, qid, q) + "\nANSWER:"
+            scores = await self.backend.score_prefixes(
+                SCORING_SYSTEM_PROMPT, user_message, prefixes
+            )
+            if scores is None:
+                return None
+            dists[qid] = {p: max(0.0, float(scores.get(p, 0.0))) for p in prefixes}
+        # Renormalize each distribution.
+        out: dict[str, dict[str, float]] = {}
+        for qid, dist in dists.items():
+            total = sum(dist.values()) or 1.0
+            out[qid] = {k: v / total for k, v in dist.items()}
+        return out
+
     async def system_one(self, req: SystemOneRequest) -> SystemOneResponse:
         self._validate_limits(req)
-        system_prompt, user_message = compile_request(req)
-        result = await self.backend.complete(system_prompt, user_message)
+
+        raw_dists: dict[str, dict[str, float]] | None = None
+        if getattr(self.profile.sampling, "strategy", "one_shot") == "logprob":
+            raw_dists = await self._logprob_pass(req)
+
+        result = None
+        if raw_dists is None:
+            system_prompt, user_message = compile_request(req)
+            result = await self.backend.complete(system_prompt, user_message)
 
         last_exc: CompileError | None = None
         for attempt in range(MAX_CORRECTIVE_RETRIES + 1):
             try:
-                raw_dists = parse_answers(result.text, req)
+                if result is not None:
+                    raw_dists = parse_answers(result.text, req)
                 break
             except CompileError as exc:
                 last_exc = exc
@@ -121,8 +159,9 @@ class SystemOneEngine:
         return SystemOneResponse(
             model=req.model or self.profile.backend.model,
             answers=answers,  # type: ignore[arg-type]
+            # Logprob strategy may skip the one_shot pass entirely (result is None).
             usage=Usage(
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
+                input_tokens=result.input_tokens if result is not None else None,
+                output_tokens=result.output_tokens if result is not None else None,
             ),
         )
