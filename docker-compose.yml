@@ -1,5 +1,5 @@
 services:
-  jevitan:
+  jeviathan:
     build: .
     ports:
       - "8100:8100"
@@ -17,7 +17,7 @@ services:
       - serve
       - Inferact/Qwen3.8-27B-NVFP4
       - --served-model-name
-      - jevitan-qwen3.8-27b
+      - jeviathan-qwen3.8-27b
       - --max-model-len
       - "32768"
       - --kv-cache-dtype

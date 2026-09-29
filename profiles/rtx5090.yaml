@@ -5,7 +5,7 @@
 backend:
   type: openai_compatible
   base_url: http://localhost:8001/v1
-  model: jevitan-qwen3.8-27b   # --served-model-name alias from setup_5090.sh
+  model: jeviathan-qwen3.8-27b   # --served-model-name alias from setup_5090.sh
   timeout_s: 120
 sampling:
   temperature: 0.0

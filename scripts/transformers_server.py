@@ -80,7 +80,7 @@ def health() -> dict:
 @app.get("/v1/models")
 def models() -> dict:
     name = STATE.get("served_name", "local-model")
-    return {"data": [{"id": name, "object": "model", "owned_by": "jevitan"}]}
+    return {"data": [{"id": name, "object": "model", "owned_by": "jeviathan"}]}
 
 
 @app.post("/v1/chat/completions")

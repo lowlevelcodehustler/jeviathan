@@ -7,3 +7,4 @@ calibration/*.json
 *.log
 *.pid
 calibration/raw-*.jsonl
+.jeviathan_profile

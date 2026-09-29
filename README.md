@@ -1,10 +1,15 @@
 # Jeviathan ⚓
 
-**A System One decision API over open-weight models.** A knock-off of TypeSafe's [Jev](https://typesafe.ai/blog/introducing-system-one-models-and-jev) that you can run today on your own hardware — while the real thing sits in a waitlist.
+**A System One compatibility and retrofit layer for open-weight LLMs.** Jeviathan speaks TypeSafe's [System One contract](https://typesafe.ai/blog/introducing-system-one-models-and-jev) — the one behind their Jev model — so you can run typed, calibrated probabilistic decisions today on your own hardware: **Qwen3.8-27B via vLLM on the RTX 5090**, Llama-3.1-8B (or Qwen small) via Ollama/llama.cpp on the laptop.
 
-Jeviathan implements Jev's **contract** (state + typed questions → typed probabilistic decisions with calibrated confidence, one parallel pass) over any OpenAI-compatible local model server: **Qwen3.8-27B via vLLM on the RTX 5090**, Llama-3.1-8B (or Qwen small) via Ollama/llama.cpp on the laptop.
-
+> Positioning: "compatibility" is at the contract level — same request/response shape, same confidence formula — not a claim of behavioural parity with Jev itself. When real Jev access lands, flip one config line and A/B the two behind an identical API.
+>
 > Research background: see [TriniGard's Jev deep-research report](../../OneDrive/Documents/Trinitris/trinigard-neo/docs/JEV_TYPESAFE_DEEP_RESEARCH.md).
+
+## Documentation
+
+- **[User guide](docs/user-guide.md)** — concepts, install on both machines, API reference, day-to-day ops, calibration workflow, troubleshooting.
+- **[Developer guide](docs/developer-guide.md)** — architecture deep-dive, extending backends and question types, testing, contributing.
 
 ---
 
@@ -71,7 +76,7 @@ python scripts/smoke_logprob.py rtx5090   # usage.input_tokens null => real logp
 
 ```bash
 # 1. Serve the model (downloads ~13-29GB on first run)
-bash scripts/setup_5090.sh          # vLLM on :8001, alias jevitan-qwen3.8-27b
+bash scripts/setup_5090.sh          # vLLM on :8001, alias jeviathan-qwen3.8-27b
 
 # 2. In another terminal: run Jeviathan against it
 pip install -r requirements.txt
@@ -114,7 +119,7 @@ Response (TypeSafe-shaped):
 
 ```json
 {
-  "model": "jevitan-qwen3.8-27b",
+  "model": "jeviathan-qwen3.8-27b",
   "answers": {
     "department":  {"type": "choice", "choice": "billing", "confidence": 0.56,
                     "probabilities": {"billing": 0.78, "returns": 0.22}},
@@ -154,7 +159,7 @@ Crash recovery: each row's full response is appended to `calibration/raw-<profil
 
 ## TriniGard integration (the meld, part two)
 
-Jeviathan speaks TypeSafe's contract, so TriniGard gets a new provider adapter (`core/adapters/jevitan.py`) that:
+Jeviathan speaks TypeSafe's contract, so TriniGard gets a new provider adapter (`core/adapters/jeviathan.py`) that:
 - calls `POST /v1/systemone` with per-use-case questions compiled from the trust config,
 - maps `confidence` → existing threshold logic (0.65–0.98) and `fallback_behavior`,
 - logs every decision through the existing WAL audit trail (HMAC-signed, SOC2 exportable).
@@ -212,8 +217,8 @@ All three answers semantically correct for a double-charge refund ticket; confid
 ## Roadmap
 
 - **v1.1 — logprob scoring (done 2026-09-25):** per-option prefix probabilities with one_shot fallback; shim prefill support; laptop demo fit above. Verify live on the 5090 box with `scripts/smoke_logprob.py`.
-- **v1.2 — TriniGard adapter + cascade (done, in the TriniGard repo):** `core/adapters/jevitan.py`, weight 0.95 in ConfidenceScorer, judgment-aware discrepancy counting.
-- **v2 — RLCD-lite SFT:** fine-tune Qwen3.8 (LoRA) on synthetic System One data generated from TriniGard's verified decision logs, then re-fit calibration. This is where "knock-off" becomes "close enough to matter."
+- **v1.2 — TriniGard adapter + cascade (done, in the TriniGard repo):** `core/adapters/jeviathan.py`, weight 0.95 in ConfidenceScorer, judgment-aware discrepancy counting.
+- **v2 — RLCD-lite SFT:** fine-tune Qwen3.8 (LoRA) on synthetic System One data generated from TriniGard's verified decision logs, then re-fit calibration. This is where a compatibility layer becomes close enough to matter.
 - **Watch:** real Jev waitlist access → A/B harness; Qwen3.8-Max open weights (2.4T/95B) for a multi-GPU tier.
 
 ## Layout
@@ -227,7 +232,9 @@ jeviathan/            # the package
   calibration/        # Platt fit/apply + CLI (RLCD-lite)
   engine/             # orchestration: validate -> compile -> call -> calibrate
 profiles/             # laptop-4050.yaml, laptop-4050-logprob.yaml, rtx5090.yaml
-scripts/              # setup_5090.sh, setup_laptop.ps1, transformers_server.py, smoke_logprob.py
+scripts/              # setup_5090.sh, setup_laptop.ps1, transformers_server.py, smoke_logprob.py, manage.py
+docs/                 # user-guide.md, developer-guide.md
+skills/jeviathan-ops/ # Bionic skill for operating the stack (install: see dev guide)
 evals/sample_eval.jsonl
 tests/                # GPU-free test suite (mock backend)
 ```
@@ -238,3 +245,15 @@ tests/                # GPU-free test suite (mock backend)
 pip install -r requirements.txt
 pytest tests/ -v      # no GPU needed; mock backend
 ```
+
+## Licensing & support
+
+- **Jeviathan is [Apache License 2.0](LICENSE)** — permissive, with an explicit patent grant (which matters in AI infrastructure) and clean contribution terms. Built on open foundations (vLLM, transformers, Qwen/Llama weights); built to give back.
+- Model weights are licensed separately: Qwen3.8 (Apache-2.0), Llama 3.1 (Meta community license). The Apache-2.0 license covers this repo's code only.
+- **TriniGard** (the enterprise verification harness that consumes Jeviathan) stays closed-source in its own repo; the adapter (`core/adapters/jeviathan.py`) is the seam — permissive upstream, proprietary downstream.
+
+### Tip jar ☕
+
+Jeviathan is free and open. If it saves you time or money, consider tipping Trinitris:
+
+> **Stripe:** [donate.stripe.com/TRINITRIS_PLACEHOLDER](https://donate.stripe.com/TRINITRIS_PLACEHOLDER) ← *replace with your live Stripe Payment Link*

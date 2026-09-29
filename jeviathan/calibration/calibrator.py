@@ -11,7 +11,7 @@ Artifact JSON shape:
   "method": "platt",
   "fitted_at": "...",
   "profile": "rtx5090",
-  "model": "jevitan-qwen3.8-27b",
+  "model": "jeviathan-qwen3.8-27b",
   "params": {"choice": {"a": .., "b": ..}, "<qid>": {"a": .., "b": ..}}
 }
 """

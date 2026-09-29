@@ -51,7 +51,7 @@ def create_app(profile: Profile | None = None) -> FastAPI:
                 {
                     "id": profile.backend.model,
                     "object": "model",
-                    "owned_by": "jevitan",
+                    "owned_by": "jeviathan",
                 }
             ]
         }
