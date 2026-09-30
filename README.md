@@ -256,4 +256,4 @@ pytest tests/ -v      # no GPU needed; mock backend
 
 Jeviathan is free and open. If it saves you time or money, consider tipping Trinitris:
 
-> **Stripe:** [donate.stripe.com/TRINITRIS_PLACEHOLDER](https://donate.stripe.com/TRINITRIS_PLACEHOLDER) ← *replace with your live Stripe Payment Link*
+> **Stripe:** [donate.stripe.com/cNi00jc4ydVy1Vsg07cs800](https://donate.stripe.com/cNi00jc4ydVy1Vsg07cs800)
