@@ -2,7 +2,7 @@
 # Backend options (pick one):
 #   A) Ollama:            ollama pull llama3.1:8b          -> http://localhost:11434/v1
 #   B) Local weights shim: python scripts/transformers_server.py
-#                          --model-dir E:\bfc-today-test-weights\model_run  (4-bit, ~5GB VRAM)
+#                          --model-dir <your-model-dir>  (4-bit, ~5GB VRAM; or set JEVIATHAN_MODEL_DIR)
 backend:
   type: openai_compatible
   base_url: http://localhost:11434/v1

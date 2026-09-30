@@ -8,3 +8,4 @@ calibration/*.json
 *.pid
 calibration/raw-*.jsonl
 .jeviathan_profile
+.jeviathan_model_dir

@@ -15,12 +15,15 @@
 #   .\scripts\setup_laptop.ps1 -Option both   # install components for both
 #   .\scripts\setup_laptop.ps1 -Option B -ModelDir D:\weights -Port 8200
 #
+# Model dir resolution for Option B: -ModelDir > $env:JEVIATHAN_MODEL_DIR >
+# .jeviathan_model_dir at repo root (gitignored) > interactive prompt.
+#
 # Non-interactive (CI): always pass -Option.
 
 param(
     [ValidateSet("A", "B", "both")] [string]$Option = "",
     [int]$Port = 8200,
-    [string]$ModelDir = "E:\bfc-today-test-weights\model_run",
+    [string]$ModelDir = $env:JEVIATHAN_MODEL_DIR,
     [string]$OllamaModel = "llama3.1:8b"
 )
 
@@ -52,6 +55,15 @@ if (-not $wantA -and -not $wantB) {
     }
 }
 
+# --- resolve Option B model dir (.jeviathan_model_dir > interactive prompt) --
+if ($wantB -and -not $ModelDir) {
+    $localFile = Join-Path $RepoRoot ".jeviathan_model_dir"
+    if (Test-Path $localFile) { $ModelDir = (Get-Content $localFile -First 1).Trim() }
+}
+if ($wantB -and -not $ModelDir -and [Environment]::UserInteractive) {
+    $ModelDir = (Read-Host "Path to local Llama weights dir for Option B").Trim()
+}
+
 # --- Option A: Ollama --------------------------------------------------------
 if ($wantA) {
     Write-Step "Option A - Ollama + $OllamaModel"
@@ -76,7 +88,10 @@ if ($wantA) {
 # --- Option B: native Torch shim --------------------------------------------
 if ($wantB) {
     Write-Step "Option B - native Torch shim over local weights"
-    if (-not (Test-Path $ModelDir)) {
+    if (-not $ModelDir) {
+        Note-Warn "No model dir given (pass -ModelDir, set JEVIATHAN_MODEL_DIR, or write .jeviathan_model_dir)."
+        Write-Host "   Installing serving deps only; start the shim later with --model-dir." -ForegroundColor Yellow
+    } elseif (-not (Test-Path $ModelDir)) {
         Note-Warn "Model dir not found: $ModelDir"
         Write-Host "   Pass -ModelDir <path> pointing at your local Llama weights." -ForegroundColor Yellow
     }
@@ -95,7 +110,11 @@ if ($wantB) {
 
     Write-Host ""
     Write-Host "Option B ready. Start the shim, then point Jeviathan at it:" -ForegroundColor Green
-    Write-Host "  python scripts/transformers_server.py --model-dir `"$ModelDir`" --port $Port"
+    if ($ModelDir) {
+        Write-Host "  python scripts/transformers_server.py --model-dir `"$ModelDir`" --port $Port"
+    } else {
+        Write-Host "  python scripts/transformers_server.py --model-dir <your-model-dir> --port $Port"
+    }
     Write-Host "  JEVIATHAN_BASE_URL=http://localhost:$Port/v1"
     Write-Host "  JEVIATHAN_MODEL=llama3.1-8b-local"
     Write-Host "  (matches profiles/laptop-4050-logprob.yaml)"

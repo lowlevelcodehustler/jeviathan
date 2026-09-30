@@ -24,17 +24,16 @@ the logprob path, or debug why an answer is slow/falling back.
 
 - **Profiles** (`profiles/*.yaml`, selected via `JEVIATHAN_PROFILE`):
   `laptop-4050` (one_shot), `laptop-4050-logprob` (logprob, laptop fit), `rtx5090` (logprob, prod).
-- **Python**: always use the repo venv — `E:/jeviathan/.venv/Scripts/python.exe` (laptop) /
-  `C:/jeviathan/.venv/Scripts/python.exe` (5090 box). On the 5090 box NEVER rely on system
+- **Python**: always use the repo venv — `<repo>/.venv/Scripts/python.exe`. On the 5090 box NEVER rely on system
   Python PATH: it's Windows Store (MSIX) Python whose pip scripts dir is not on PATH.
-- **Model weights** (laptop shim): `E:\bfc-today-test-weights\model_run` (Llama-3.1-8B-Instruct, BF16 → served NF4).
+- **Model weights** (laptop shim): resolved from --model-dir > $JEVIATHAN_MODEL_DIR > .jeviathan_model_dir at repo root (Llama-3.1-8B-Instruct, BF16 → served NF4).
 
 ## Commands (Git Bash, from the repo root)
 
 All via the manager — it handles Windows wrapper PIDs, port-owner fallbacks and health waits:
 
 ```bash
-PY=.venv/Scripts/python.exe   # C:/jeviathan on the 5090 box; E:/jeviathan here
+PY=.venv/Scripts/python.exe   # repo .venv (Windows); .venv/bin/python on Linux
 
 $PY scripts/manage.py status                      # health of shim/api/vllm (+ --strict for exit code)
 $PY scripts/manage.py start all --profile laptop-4050        # laptop stack (shim + api)

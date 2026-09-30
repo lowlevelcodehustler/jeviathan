@@ -22,7 +22,7 @@ REPO="$(pwd)"
 TIER="${JEVIATHAN_SETUP_TIER:-}"
 PERSIST=0
 PORT=8200
-MODEL_DIR="E:/bfc-today-test-weights/model_run"
+MODEL_DIR="${JEVIATHAN_MODEL_DIR:-}"
 
 # --- args --------------------------------------------------------------------
 while [ $# -gt 0 ]; do
@@ -35,6 +35,11 @@ while [ $# -gt 0 ]; do
     *) echo "unknown arg: $1 (see --help)" >&2; exit 2 ;;
   esac
 done
+
+# Model dir fallback: .jeviathan_model_dir at repo root (gitignored).
+if [ -z "$MODEL_DIR" ] && [ -f .jeviathan_model_dir ]; then
+  MODEL_DIR="$(head -1 .jeviathan_model_dir | tr -d '[:space:]')"
+fi
 
 step() { printf '\n==> %s\n' "$*"; }
 warn() { printf '!! %s\n' "$*" >&2; }
@@ -123,8 +128,13 @@ run_tier_ab() {  # $1 = A|B ; PowerShell on Windows, inline steps otherwise
   local opt="$1" rc=0
   if command -v powershell >/dev/null 2>&1; then
     step "Tier $opt via setup_laptop.ps1 ..."
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup_laptop.ps1 \
-      -Option "$opt" -Port "$PORT" -ModelDir "$MODEL_DIR" || rc=$?
+    if [ -n "$MODEL_DIR" ]; then
+      powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup_laptop.ps1 \
+        -Option "$opt" -Port "$PORT" -ModelDir "$MODEL_DIR" || rc=$?
+    else
+      powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup_laptop.ps1 \
+        -Option "$opt" -Port "$PORT" || rc=$?
+    fi
   else
     if [ "$opt" = "A" ]; then
       step "Tier A: Ollama + llama3.1:8b (no PowerShell found; inline)"

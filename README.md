@@ -4,7 +4,7 @@
 
 > Positioning: "compatibility" is at the contract level — same request/response shape, same confidence formula — not a claim of behavioural parity with Jev itself. When real Jev access lands, flip one config line and A/B the two behind an identical API.
 >
-> Research background: see [TriniGard's Jev deep-research report](../../OneDrive/Documents/Trinitris/trinigard-neo/docs/JEV_TYPESAFE_DEEP_RESEARCH.md).
+> Research background: the Jev deep-research report lives in the TriniGard repo (`docs/JEV_TYPESAFE_DEEP_RESEARCH.md`).
 
 ## Documentation
 
@@ -54,7 +54,7 @@ The payoff: when real Jev access lands, you flip one config line and A/B the two
 | Machine | Model | Why |
 |---|---|---|
 | **RTX 5090 (32GB)** — prod | `Inferact/Qwen3.8-27B-NVFP4` via vLLM ≥0.17 | "Fits one Blackwell GPU in every precision: NVFP4 in 24.6 GiB" ([vLLM recipe](https://recipes.vllm.ai/Qwen/Qwen3.8-27B)). Fallback: official `Qwen/Qwen3.8-27B-FP8` |
-| **Laptop 4050 (6GB)** — dev/test | Llama-3.1-8B-Instruct Q4 (~4.9GB) via Ollama, or your existing local weights (`E:\bfc-today-test-weights\model_run`) via `scripts/transformers_server.py` in NF4 | Zero-download option already on disk; 6GB VRAM caps you at ~8B-class |
+| **Laptop 4050 (6GB)** — dev/test | Llama-3.1-8B-Instruct Q4 (~4.9GB) via Ollama, or any local HF weights dir (`--model-dir`, $JEVIATHAN_MODEL_DIR, or `.jeviathan_model_dir`) served by `scripts/transformers_server.py` in NF4 | Zero-download option; 6GB VRAM caps you at ~8B-class |
 | Future | Qwen3.8-Max class (2.4T / 95B active, open weights) | Multi-GPU or cloud; revisit when it lands |
 
 ## Sampling strategies (v1.1)
@@ -91,7 +91,7 @@ powershell -File scripts/setup_laptop.ps1     # pulls llama3.1:8b, starts ollama
 
 # Option B: your existing local weights (no download), 4-bit ~5GB VRAM
 pip install torch transformers bitsandbytes fastapi uvicorn
-python scripts/transformers_server.py --model-dir E:\bfc-today-test-weights\model_run --port 8200
+python scripts/transformers_server.py --model-dir <your-model-dir> --port 8200   # or set JEVIATHAN_MODEL_DIR
 $env:JEVIATHAN_BASE_URL="http://localhost:8200/v1"; $env:JEVIATHAN_MODEL="llama3.1-8b-local"
 
 # Run Jeviathan (default profile = laptop-4050)

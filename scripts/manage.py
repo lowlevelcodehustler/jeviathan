@@ -25,6 +25,8 @@ Examples:
 Notes:
   * `start api` auto-points JEVIATHAN_BASE_URL/JEVIATHAN_MODEL at the local
     model server (shim :8200 or vllm :8001) unless you set them yourself.
+  * `start shim` resolves the weights dir from --model-dir, then
+    $JEVIATHAN_MODEL_DIR, then .jeviathan_model_dir at repo root (gitignored).
   * Model loads are slow on this hardware: shim ~40 s-6 min, vllm minutes to
     tens of minutes on first run (weight download). `start` waits and polls;
     use --wait 0 to detach immediately.
@@ -49,7 +51,28 @@ PY = sys.executable  # children run under the same interpreter (venv-aware)
 
 VLLM_MODEL_DEFAULT = "Inferact/Qwen3.8-27B-NVFP4"
 VLLM_ALIAS = "jeviathan-qwen3.8-27b"
-SHIM_MODEL_DIR_DEFAULT = r"E:\bfc-today-test-weights\model_run"
+
+
+def resolve_shim_model_dir(cli_value: str | None = None) -> str:
+    """Local weights dir for the NF4 shim (no machine-specific defaults).
+
+    Resolution order: --model-dir arg > $JEVIATHAN_MODEL_DIR env var >
+    .jeviathan_model_dir file at repo root (gitignored, one line).
+    """
+    if cli_value:
+        return cli_value
+    env = os.environ.get("JEVIATHAN_MODEL_DIR")
+    if env:
+        return env
+    local = REPO / ".jeviathan_model_dir"
+    if local.is_file():
+        p = local.read_text(encoding="utf-8").strip()
+        if p:
+            return p
+    raise SystemExit(
+        "No model dir for the NF4 shim. Pass --model-dir, set $JEVIATHAN_MODEL_DIR, "
+        f"or write your weights path to {REPO / '.jeviathan_model_dir'} (gitignored)."
+    )
 
 # name -> (port, pidfile, logfile, health_path, default wait seconds)
 SERVICES: dict[str, tuple[int, str, str, str, int]] = {
@@ -201,7 +224,7 @@ def build_cmd(name: str, args) -> tuple[list[str], dict | None]:
     if name == "shim":
         cmd = [
             PY, "scripts/transformers_server.py",
-            "--model-dir", args.model_dir or SHIM_MODEL_DIR_DEFAULT,
+            "--model-dir", resolve_shim_model_dir(args.model_dir),
             "--port", str(SERVICES["shim"][0]),
             "--served-name", "llama3.1-8b-local",
         ]
@@ -428,7 +451,8 @@ def main() -> int:
             sp.add_argument("--profile", default=None,
                             help="JEVIATHAN_PROFILE for the api (default: laptop-4050)")
             sp.add_argument("--model-dir", default=None,
-                            help=f"shim --model-dir (default: {SHIM_MODEL_DIR_DEFAULT})")
+                            help="shim weights dir ($JEVIATHAN_MODEL_DIR or "
+                                 ".jeviathan_model_dir if omitted)")
             sp.add_argument("--vllm-model", default=None,
                             help=f"vLLM model id (default: {VLLM_MODEL_DEFAULT})")
         else:

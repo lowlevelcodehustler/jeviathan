@@ -1,11 +1,12 @@
 """OpenAI-compatible shim serving a local HF model with 4-bit quantization.
 
-Laptop tier: serves the existing Llama-3.1-8B-Instruct weights from
-E:\\bfc-today-test-weights\\model_run without any download (~5GB VRAM in NF4).
+Laptop tier: serves your local Llama-class weights in NF4 (~5GB VRAM for an
+8B model) without any download. Point --model-dir at the folder containing
+the HF weights (config.json, tokenizer files, safetensors).
 
 Usage:
     python scripts/transformers_server.py \
-        --model-dir E:\\bfc-today-test-weights\\model_run \
+        --model-dir /path/to/local-weights \
         --port 8200 --max-model-len 8192
 """
 

@@ -17,12 +17,18 @@ param(
     [ValidateSet("A", "B", "C")] [string]$Tier = "",
     [switch]$Persist,
     [int]$Port = 8200,
-    [string]$ModelDir = "E:\bfc-today-test-weights\model_run"
+    [string]$ModelDir = $env:JEVIATHAN_MODEL_DIR
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
+
+# Model dir fallback for tier B: .jeviathan_model_dir at repo root (gitignored).
+if (-not $ModelDir) {
+    $localFile = Join-Path $RepoRoot ".jeviathan_model_dir"
+    if (Test-Path $localFile) { $ModelDir = (Get-Content $localFile -First 1).Trim() }
+}
 
 function Write-Step($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
 function Note-Warn($m)  { Write-Host "!! $m" -ForegroundColor Yellow }
@@ -105,7 +111,11 @@ Note-Warn "Recommendation was: $recommended ($why)"
 # --- delegate -----------------------------------------------------------------
 switch ($Tier) {
     "A" { & (Join-Path $RepoRoot "scripts\setup_laptop.ps1") -Option A }
-    "B" { & (Join-Path $RepoRoot "scripts\setup_laptop.ps1") -Option B -Port $Port -ModelDir $ModelDir }
+    "B" {
+        $childArgs = @("-Option", "B", "-Port", "$Port")
+        if ($ModelDir) { $childArgs += @("-ModelDir", $ModelDir) }
+        & (Join-Path $RepoRoot "scripts\setup_laptop.ps1") @childArgs
+    }
     "C" {
         Write-Host ""
         Write-Host "Tier C (vLLM) needs a Linux/WSL2 environment for official vLLM." -ForegroundColor Yellow
