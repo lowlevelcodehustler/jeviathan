@@ -60,7 +60,17 @@ try { $ramGB = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysica
 $diskFreeGB = "?"
 try {
     $letter = (Split-Path -Qualifier $RepoRoot)
-    if ($letter) { $diskFreeGB = [math]::Round((New-Object System.IO.DriveInfo($letter)).Free / 1GB, 0) }
+    if ($letter) {
+        # DriveInfo.Free returns 0 on some systems (OneDrive/virtualized volumes);
+        # Get-PSDrive reports the real value. Prefer whichever is non-zero so we
+        # never display a misleading zero.
+        $driveName = $letter.TrimEnd(':')
+        $candidates = @()
+        try { $candidates += (Get-PSDrive -Name $driveName -ErrorAction Stop).Free } catch {}
+        try { $candidates += (New-Object System.IO.DriveInfo($letter)).Free } catch {}
+        $nonZero = @($candidates | Where-Object { $_ -gt 0 })
+        if ($nonZero) { $diskFreeGB = [math]::Round($nonZero[0] / 1GB, 0) }
+    }
 } catch {}
 
 $hasOllama = [bool](Get-Command ollama -ErrorAction SilentlyContinue)
@@ -88,21 +98,39 @@ if ($gpuName -and [double]$vramGB -ge 24) {
 }
 
 # --- choose -------------------------------------------------------------------
-if (-not $Tier) { $Tier = $env:JEVIATHAN_SETUP_TIER }
+# NOTE: never assign a raw env value to $Tier directly - the parameter carries
+# [ValidateSet], and assigning $null or an invalid value raises ValidateSetFailure.
+$envRaw = $env:JEVIATHAN_SETUP_TIER
+$envTier = if ($envRaw) { $envRaw.Trim().ToUpper() } else { "" }
+# Validate BEFORE assigning: $Tier carries [ValidateSet], so even a valid-looking
+# but wrong value (e.g. JEVIATHAN_SETUP_TIER=Z) would raise ValidateSetFailure.
+if (-not $Tier -and $envTier -and ($envTier -notin @("A", "B", "C"))) {
+    Note-Warn "Invalid JEVIATHAN_SETUP_TIER '$envTier' (expected A, B or C)."
+    exit 2
+}
+if (-not $Tier -and $envTier) { $Tier = $envTier }
+# UserInteractive alone is not enough: it can be true while stdin is redirected,
+# in which case Read-Host returns $null. Only prompt with a real console.
+$interactive = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
 if (-not $Tier) {
-    if ([Environment]::UserInteractive) {
+    if ($interactive) {
         Write-Host ""
         Write-Host "Tiers:" -ForegroundColor Cyan
         Write-Host "  [A] Ollama + Llama-3.1-8B (~5GB)          -> setup_laptop.ps1 -Option A"
         Write-Host "  [B] native Torch NF4 shim (local weights) -> setup_laptop.ps1 -Option B"
         Write-Host "  [C] vLLM Qwen3.8-27B (>=24GB VRAM)       -> setup_5090.sh (WSL2 or fork)"
         Write-Host ""
-        $pick = (Read-Host "Choose [A/B/C] (default: $recommended)").Trim().ToUpper()
+        $raw = Read-Host "Choose [A/B/C] (default: $recommended)"
+        $pick = if ($raw) { $raw.Trim().ToUpper() } else { "" }
         if ($pick -eq "") { $Tier = $recommended } else { $Tier = $pick }
     } else {
         Note-Warn "Non-interactive run requires -Tier A|B|C."
         exit 1
     }
+}
+if ($Tier -notin @("A", "B", "C")) {
+    Note-Warn "Invalid tier '$Tier' (expected A, B or C)."
+    exit 2
 }
 
 Write-Step "Selected tier: $Tier"
@@ -120,8 +148,9 @@ switch ($Tier) {
         Write-Host ""
         Write-Host "Tier C (vLLM) needs a Linux/WSL2 environment for official vLLM." -ForegroundColor Yellow
         $runNow = $false
-        if ([Environment]::UserInteractive) {
-            $ans = (Read-Host "Run 'bash scripts/setup_5090.sh' now? [Y/n]").Trim()
+        if ($interactive) {
+            $raw = Read-Host "Run 'bash scripts/setup_5090.sh' now? [Y/n]"
+            $ans = if ($raw) { $raw.Trim() } else { "" }
             $runNow = ($ans -eq "" -or $ans -match '^[Yy]')
         }
         if ($runNow -and (Get-Command bash -ErrorAction SilentlyContinue)) {

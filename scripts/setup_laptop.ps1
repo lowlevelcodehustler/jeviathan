@@ -36,13 +36,18 @@ function Note-Warn($m)  { Write-Host "!! $m" -ForegroundColor Yellow }
 # --- resolve which options to run -------------------------------------------
 $wantA = ($Option -eq "A") -or ($Option -eq "both")
 $wantB = ($Option -eq "B") -or ($Option -eq "both")
+# UserInteractive alone is not enough: it can be true while stdin is
+# redirected (CI, pipes), in which case Read-Host returns $null. Only prompt
+# when we actually have a console to read from.
+$interactive = [Environment]::UserInteractive -and -not [Console]::IsInputRedirected
 if (-not $wantA -and -not $wantB) {
-    if ([Environment]::UserInteractive) {
+    if ($interactive) {
         Write-Host "Jeviathan laptop setup - pick a backend option:" -ForegroundColor Cyan
         Write-Host "  A)     Ollama + Llama-3.1-8B   (download ~4.9GB, easiest)"
         Write-Host "  B)     Native Torch shim       (uses local weights in $ModelDir)"
         Write-Host "  both)  install components for both"
-        $choice = (Read-Host "Choice [A/B/both]").Trim().ToLower()
+        $raw = Read-Host "Choice [A/B/both]"
+        $choice = if ($raw) { $raw.Trim().ToLower() } else { "" }
         switch ($choice) {
             "a"    { $wantA = $true }
             "b"    { $wantB = $true }
@@ -60,8 +65,9 @@ if ($wantB -and -not $ModelDir) {
     $localFile = Join-Path $RepoRoot ".jeviathan_model_dir"
     if (Test-Path $localFile) { $ModelDir = (Get-Content $localFile -First 1).Trim() }
 }
-if ($wantB -and -not $ModelDir -and [Environment]::UserInteractive) {
-    $ModelDir = (Read-Host "Path to local Llama weights dir for Option B").Trim()
+if ($wantB -and -not $ModelDir -and $interactive) {
+    $raw = Read-Host "Path to local Llama weights dir for Option B"
+    if ($raw) { $ModelDir = $raw.Trim() }
 }
 
 # --- Option A: Ollama --------------------------------------------------------

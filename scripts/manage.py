@@ -117,6 +117,26 @@ def clear_pid(name: str) -> None:
 
 
 def pid_alive(pid: int) -> bool:
+    """True if a process with this PID is alive and openable.
+
+    Windows note: os.kill(pid, 0) is NOT a reliable liveness probe here —
+    CPython's kill() opens the target with PROCESS_ALL_ACCESS and raises
+    OSError (e.g. errno 87/5) for processes it cannot fully open (elevated
+    services, other sessions), which would make stop/restart/start-wait
+    misreport live servers as dead. OpenProcess with
+    PROCESS_QUERY_LIMITED_INFORMATION succeeds for any same-user process and
+    is the standard "is this pid alive" check (what psutil does).
+    """
+    if IS_WIN:
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        h = k32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not h:
+            return False
+        k32.CloseHandle(h)
+        return True
     try:
         os.kill(pid, 0)
         return True
