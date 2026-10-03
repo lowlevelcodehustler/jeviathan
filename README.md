@@ -257,3 +257,34 @@ pytest tests/ -v      # no GPU needed; mock backend
 Jeviathan is free and open. If it saves you time or money, consider tipping Trinitris:
 
 > **Stripe:** [donate.stripe.com/cNi00jc4ydVy1Vsg07cs800](https://donate.stripe.com/cNi00jc4ydVy1Vsg07cs800)
+
+## Example: ticket triage grounded by the Brave Search API
+
+`examples/brave_search_triage.py` shows the pattern for a decision that *verifies itself against the live web* when confidence is low. Triage runs locally (~$0, <1s); only the grounding step calls out to the [Brave Search API](https://brave.com/search/api) ($5 per 1,000 requests; $5 free credits monthly).
+
+```bash
+export JEVIATHAN_BASE_URL=http://localhost:8100     # or your profile's port
+export BRAVE_API_KEY=<key from brave.com/search/api>
+
+python examples/brave_search_triage.py "My card was charged twice for order #4512. I want a refund."
+```
+
+What happens:
+
+1. `POST /v1/systemone` -> department (choice), urgency (noul), frustration (score) with calibrated confidence.
+2. If routing confidence < 0.7 (or `--always-ground`): `GET https://api.search.brave.com/res/v1/web/search?q=...&count=5` with the `X-Subscription-Token` header.
+3. Report: decision + cited evidence, ready to feed an agent or a human. Deterministic on purpose - no second model call, so it runs anywhere and costs only search calls.
+
+The raw pieces, for your own wiring:
+
+```bash
+# 1) triage (Jeviathan)
+curl http://localhost:8100/v1/systemone -H "Content-Type: application/json" \
+     -d '{"state": "Customer ticket: \"My card was charged twice. I want a refund.\"", "questions": {"department": {"type": "choice", "instructions": "Which team should handle this?", "criteria": {"billing": "Charges, refunds", "returns": "Exchanges, damaged items"}}}'
+
+# 2) grounding (Brave Search API)
+curl "https://api.search.brave.com/res/v1/web/search?q=refund+double+charge&count=5" \
+     -H "X-Subscription-Token: $BRAVE_API_KEY"
+```
+
+Upgrade path: swap the web endpoint for the [LLM Context endpoint](https://api-dashboard.search.brave.com/documentation/services/llm-context) when you want results pre-packaged for model consumption instead of human-readable snippets.

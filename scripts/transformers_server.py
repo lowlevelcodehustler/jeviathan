@@ -4,16 +4,22 @@ Laptop tier: serves your local Llama-class weights in NF4 (~5GB VRAM for an
 8B model) without any download. Point --model-dir at the folder containing
 the HF weights (config.json, tokenizer files, safetensors).
 
+The weights dir is resolved in this order:
+    1. --model-dir flag
+    2. $JEVIATHAN_MODEL_DIR environment variable
+    3. .jeviathan_model_dir file at repo root (one line: path to the HF weights)
+
 Usage:
     python scripts/transformers_server.py \
-        --model-dir /path/to/local-weights \
-        --port 8200 --max-model-len 8192
+        --port 8200 --max-model-len 8192   # when $JEVIATHAN_MODEL_DIR is set
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import time
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -206,16 +212,46 @@ def chat_completions(body: dict) -> dict:
     }
 
 
+def resolve_model_dir(cli_value: str | None = None) -> str | None:
+    """Weights dir resolution order: --model-dir > $JEVIATHAN_MODEL_DIR >
+    .jeviathan_model_dir at repo root (gitignored). Returns None if unset.
+
+    Anchored at the script's repo root so it works from any CWD (manage.py
+    keeps a parallel resolver for its own CLI; keep the two in sync).
+    """
+    if cli_value:
+        return cli_value
+    env = os.environ.get("JEVIATHAN_MODEL_DIR")
+    if env:
+        return env
+    local = Path(__file__).resolve().parent.parent / ".jeviathan_model_dir"
+    if local.is_file():
+        p = local.read_text(encoding="utf-8").strip()
+        if p:
+            return p
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model-dir", required=True)
+    parser.add_argument("--model-dir", default=None,
+                        help="HF weights dir; falls back to $JEVIATHAN_MODEL_DIR "
+                             "or a .jeviathan_model_dir file at repo root")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8200)
     parser.add_argument("--served-name", default="llama3.1-8b-local")
     args = parser.parse_args()
 
+    model_dir = resolve_model_dir(args.model_dir)
+    if not model_dir:
+        parser.error(
+            "no weights dir given: pass --model-dir, set $JEVIATHAN_MODEL_DIR, "
+            "or create a .jeviathan_model_dir file at the repo root "
+            "(one line: path to HF weights)"
+        )
+
     STATE["served_name"] = args.served_name
-    _load(args.model_dir)
+    _load(model_dir)
 
     import uvicorn
 
