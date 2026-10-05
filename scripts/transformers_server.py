@@ -9,6 +9,11 @@ The weights dir is resolved in this order:
     2. $JEVIATHAN_MODEL_DIR environment variable
     3. .jeviathan_model_dir file at repo root (one line: path to the HF weights)
 
+Optionally a LoRA adapter from the decision feedback loop is applied on top of
+the base after loading (--adapter-dir > $JEVIATHAN_ADAPTER_DIR >
+.jeviathan_adapter_dir at repo root). A bad adapter dir never takes the shim
+down — it serves the bare base instead.
+
 Usage:
     python scripts/transformers_server.py \
         --port 8200 --max-model-len 8192   # when $JEVIATHAN_MODEL_DIR is set
@@ -27,7 +32,7 @@ app = FastAPI(title="Jeviathan local model shim")
 STATE: dict = {}
 
 
-def _load(model_dir: str) -> None:
+def _load(model_dir: str, adapter_dir: str | None = None) -> None:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -72,6 +77,21 @@ def _load(model_dir: str) -> None:
                 )
     else:
         model = AutoModelForCausalLM.from_pretrained(model_dir, torch_dtype=torch.float32)
+
+    # Optional LoRA adapter from the decision feedback loop. Non-fatal: a bad
+    # adapter dir must never take the shim down — serve the base instead.
+    if adapter_dir:
+        try:
+            from peft import PeftModel
+
+            model = PeftModel.from_pretrained(model, adapter_dir)
+            print(f"LoRA adapter applied from {adapter_dir}.", flush=True)
+        except Exception as exc:  # noqa: BLE001 - serve the base rather than crash
+            print(
+                f"WARNING: could not apply LoRA adapter from {adapter_dir} ({exc}); "
+                "serving base model.",
+                flush=True,
+            )
 
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
     STATE["model"] = model
@@ -212,6 +232,24 @@ def chat_completions(body: dict) -> dict:
     }
 
 
+def resolve_adapter_dir(cli_value: str | None = None) -> str | None:
+    """LoRA adapter dir resolution order (decision feedback loop):
+    --adapter-dir > $JEVIATHAN_ADAPTER_DIR > .jeviathan_adapter_dir at repo
+    root (gitignored, one line). Returns None when unset — the shim then
+    serves the bare base model."""
+    if cli_value:
+        return cli_value
+    env = os.environ.get("JEVIATHAN_ADAPTER_DIR")
+    if env:
+        return env
+    local = Path(__file__).resolve().parent.parent / ".jeviathan_adapter_dir"
+    if local.is_file():
+        p = local.read_text(encoding="utf-8").strip()
+        if p:
+            return p
+    return None
+
+
 def resolve_model_dir(cli_value: str | None = None) -> str | None:
     """Weights dir resolution order: --model-dir > $JEVIATHAN_MODEL_DIR >
     .jeviathan_model_dir at repo root (gitignored). Returns None if unset.
@@ -237,6 +275,10 @@ def main() -> None:
     parser.add_argument("--model-dir", default=None,
                         help="HF weights dir; falls back to $JEVIATHAN_MODEL_DIR "
                              "or a .jeviathan_model_dir file at repo root")
+    parser.add_argument("--adapter-dir", default=None,
+                        help="LoRA adapter dir (decision feedback loop); falls "
+                             "back to $JEVIATHAN_ADAPTER_DIR or the "
+                             ".jeviathan_adapter_dir file at repo root")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8200)
     parser.add_argument("--served-name", default="llama3.1-8b-local")
@@ -251,7 +293,7 @@ def main() -> None:
         )
 
     STATE["served_name"] = args.served_name
-    _load(model_dir)
+    _load(model_dir, resolve_adapter_dir(args.adapter_dir))
 
     import uvicorn
 

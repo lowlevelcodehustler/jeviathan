@@ -18,6 +18,10 @@ sampling:
   max_tokens: 768
 calibration:
   enabled: false
+# Decision feedback loop (nightly): log every pass to data/decisions.jsonl so
+# outcomes can be reviewed and fed back into training (scripts/feedback.py).
+feedback:
+  enabled: true
 limits:
   max_questions: 32
   max_options_per_choice: 64

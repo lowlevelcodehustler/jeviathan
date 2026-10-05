@@ -218,7 +218,7 @@ All three answers semantically correct for a double-charge refund ticket; confid
 
 - **v1.1 — logprob scoring (done 2026-09-25):** per-option prefix probabilities with one_shot fallback; shim prefill support; laptop demo fit above. Verify live on the 5090 box with `scripts/smoke_logprob.py`.
 - **v1.2 — TriniGard adapter + cascade (done, in the TriniGard repo):** `core/adapters/jeviathan.py`, weight 0.95 in ConfidenceScorer, judgment-aware discrepancy counting.
-- **v2 — RLCD-lite SFT:** fine-tune Qwen3.8 (LoRA) on synthetic System One data generated from TriniGard's verified decision logs, then re-fit calibration. This is where a compatibility layer becomes close enough to matter.
+- **v2 — Decision feedback loop (nightly):** capture -> review -> QLoRA -> promote, all local (`scripts/feedback.py`, user guide §8); the shim serves the resulting adapter with zero extra VRAM and rollback is one pointer file. Refit calibration after promoting. This is where a compatibility layer becomes close enough to matter.
 - **Watch:** real Jev waitlist access → A/B harness; Qwen3.8-Max open weights (2.4T/95B) for a multi-GPU tier.
 
 ## Layout

@@ -1,0 +1,6 @@
+# Jeviathan training extras — decision feedback loop (scripts/feedback.py train).
+# Install into the SAME venv as the shim:
+#   pip install -r requirements-train.txt
+# (torch / transformers / bitsandbytes come from the optional block in
+#  requirements.txt; peft is the only extra.)
+peft>=0.14

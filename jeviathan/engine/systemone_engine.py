@@ -8,6 +8,7 @@ answers with confidence, TypeSafe-shaped.
 from __future__ import annotations
 
 import json
+import sys
 
 from ..backends.base import DecisionBackend
 from ..backends.openai_backend import OpenAICompatibleBackend
@@ -156,7 +157,7 @@ class SystemOneEngine:
                         score=score, confidence=confidence, probabilities=probs
                     )
 
-        return SystemOneResponse(
+        response = SystemOneResponse(
             model=req.model or self.profile.backend.model,
             answers=answers,  # type: ignore[arg-type]
             # Logprob strategy may skip the one_shot pass entirely (result is None).
@@ -165,3 +166,25 @@ class SystemOneEngine:
                 output_tokens=result.output_tokens if result is not None else None,
             ),
         )
+
+        # Decision feedback loop: append this pass to the decision log so its
+        # outcome can be reviewed and fed back into training. Opt-in per
+        # profile (feedback.enabled); logging must never break a decision.
+        if getattr(self.profile, "feedback", None) is not None and self.profile.feedback.enabled:
+            try:
+                from ..feedback.store import DecisionLog
+
+                DecisionLog().record(
+                    profile=self.profile.name,
+                    model=response.model,
+                    strategy=getattr(self.profile.sampling, "strategy", "one_shot"),
+                    state=req.state,
+                    questions={qid: q.model_dump() for qid, q in req.questions.items()},
+                    raw_output=result.text if result is not None else None,
+                    answers={qid: a.model_dump() for qid, a in answers.items()},
+                    usage=response.usage.model_dump(),
+                )
+            except Exception as exc:  # noqa: BLE001 - non-fatal by design
+                print(f"[feedback] failed to log decision: {exc}", file=sys.stderr)
+
+        return response

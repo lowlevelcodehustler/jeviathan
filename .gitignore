@@ -9,3 +9,6 @@ calibration/*.json
 calibration/raw-*.jsonl
 .jeviathan_profile
 .jeviathan_model_dir
+.jeviathan_adapter_dir
+data/
+finetunes/

@@ -249,7 +249,62 @@ Calibration fits Platt parameters `(a, b)` from your own labeled eval set and ap
 
 ---
 
-## 8. Licensing & support
+## 8. Learning from your decisions (feedback loop, nightly)
+
+Jeviathan can learn from its own decision history: every System One pass is logged
+(profile opt-in), you review outcomes, and verified corrections are used to
+QLoRA-fine-tune the local model into new weights that the shim serves.
+
+**Why adapters:** on a 6 GB card an 8B model trains in NF4 with LoRA (~0.5% of
+params). The result is a small adapter file, not a second copy of the weights:
+zero extra VRAM at serving time, and rollback is deleting one pointer file.
+
+### Workflow
+
+```bash
+# 1. Capture — profiles laptop-4050*.yaml have feedback.enabled: true; every pass
+#    appends to data/decisions.jsonl (gitignored). Manual capture too:
+python scripts/feedback.py log --state "..." --questions '{...}' --answers '{...}'
+
+# 2. Review — attach verdicts and corrections:
+python scripts/feedback.py list --pending
+python scripts/feedback.py review <id> --verdict incorrect \
+    --correction-json '{"department": "returns"}'
+
+# 3. Build + train (needs GPU; pip install -r requirements-train.txt):
+python scripts/feedback.py build-dataset          # -> data/sft.jsonl
+python scripts/feedback.py train                  # QLoRA on the shim's base model
+
+# 4. Promote + restart:
+python scripts/feedback.py promote <run-id>
+python scripts/manage.py restart shim
+
+# Rollback anytime:
+python scripts/feedback.py promote --revert && python scripts/manage.py restart shim
+```
+
+### Rules of the loop
+
+- A record only trains if **every** question is verified (verdict `correct`, or a
+  correction covering it). Partially-verified records are excluded and counted —
+  Jeviathan never learns an answer nobody checked.
+- Corrections become one-hot targets; explicit `{"probabilities": {...}}` overrides
+  are honoured as-is. Residual miscalibration is absorbed by the calibration layer:
+  after promoting, refit with `manage.py fit --data <export-eval output>`.
+- `feedback.py export-eval` turns verified records into calibration-fit rows.
+- Ollama/vLLM tiers keep capturing decisions; `promote` applies to the shim tier
+  (the only one that loads HF weights directly). GGUF export for Ollama is future work.
+
+### VRAM notes (6 GB laptop)
+
+NF4 base (~5 GB) + LoRA fits, but long sequences spill into system RAM via Windows
+unified memory — keep `--max-len` ≤ 1024 and expect slow steps on a power-capped
+GPU. Runs write `finetunes/<base>/<run-id>/train_report.json` (hyperparams,
+per-epoch losses, VRAM peak).
+
+---
+
+## 9. Licensing & support
 
 - **Jeviathan is [Apache License 2.0](../LICENSE)** — permissive, with an explicit patent grant and clean contribution terms. Model weights are licensed separately (Qwen3.8: Apache-2.0; Llama 3.1: Meta community license).
 - If Jeviathan saves you time or money, consider tipping Trinitris: **Stripe:** <https://donate.stripe.com/cNi00jc4ydVy1Vsg07cs800>

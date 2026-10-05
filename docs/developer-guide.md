@@ -106,7 +106,45 @@ Run a single file: `python -m pytest tests/test_engine.py -v`. New behaviour get
 - **No machine-specific paths in tracked files**: local weights dirs resolve via `--model-dir` > `$JEVIATHAN_MODEL_DIR` > `.jeviathan_model_dir` (gitignored); keep docs using placeholders.
 - **Commits**: imperative subject, specific file adds (never `git add -A` — the working tree carries unrelated WIP and tracked noise).
 
-## 7. Related projects
+## 7. Decision feedback loop (nightly)
+
+Capture -> review -> QLoRA -> promote, all local. The shim serves the resulting
+adapter with zero extra VRAM; rollback is deleting one pointer file.
+
+### Module map
+
+| Piece | Role |
+|---|---|
+| `jeviathan/feedback/store.py` | Append-only JSONL decision log + feedback sidecar (`data/decisions.jsonl`, `data/feedback.jsonl`). Reviews attach by id; latest ts wins, file order breaks ties. Byte-stable (LF endings). |
+| `jeviathan/feedback/dataset.py` | Verified records -> SFT chat pairs. Prompts are re-compiled with the same `compile_request()` as inference (no template drift); targets are the canonical JSON distribution object. Usability rule: every question must be verified or the record is excluded and counted. |
+| `jeviathan/feedback/trainer.py` | QLoRA core: NF4 base (same bnb config as the shim) + LoRA r=16 on attention+MLP linears, manual loop (micro-batch 1, grad-accum N), labels=-100 over prompt tokens via chat-template prefix alignment, cosine schedule with 5% warmup, per-epoch eval, best-adapter save. Lazy-imports torch/peft/bnb so the rest of Jeviathan runs without them. |
+| `scripts/feedback.py` | CLI: status/list/show/log/review/build-dataset/train/promote/export-eval. `promote` writes `.jeviathan_adapter_dir` (byte-exact; control chars rejected), which the shim resolves after `$JEVIATHAN_ADAPTER_DIR`. |
+| engine hook | `systemone_engine.system_one()` appends a record when `profile.feedback.enabled`; logging failures are non-fatal by design. |
+
+### Why adapter-first on this tier
+
+Merging LoRA into 4-bit linears and re-saving is known to degrade quality
+(huggingface/peft#2321), and a bf16 full merge needs ~17 GB RAM for an 8B model.
+The shim loads the NF4 base then applies `PeftModel.from_pretrained(adapter)` —
+zero extra VRAM, trivially reversible. Merged-weights export is future work for
+bigger machines (and GGUF export would unlock Ollama tiers).
+
+### Invariants to keep
+
+- Training prompts must stay byte-identical to inference prompts (same compiler,
+  same chat template). If you change `SYSTEM_PROMPT`, existing datasets are stale.
+- The shim's adapter apply is non-fatal: a bad `.jeviathan_adapter_dir` serves the
+  bare base and logs a warning — it must never take the model server down.
+- Pointer files (`.jeviathan_model_dir`, `.jeviathan_adapter_dir`) are written as
+  raw bytes with LF endings; never through shell text tools that mangle escapes.
+
+### Tests
+
+`tests/test_feedback.py` covers store round-trip/last-wins, usability rules,
+target shape vs the contract, pointer byte-exactness, and engine-hook on/off/
+non-fatal — all GPU-free. The QLoRA path is exercised manually (user guide §8).
+
+## 8. Related projects
 
 - **TriniGard** (closed-source) consumes Jeviathan through an adapter (`core/adapters/jeviathan.py`) behind its verification engine; the seam is the System One API, so the two evolve independently.
 - Ops runbook for agents: `skills/jeviathan-ops/SKILL.md`.

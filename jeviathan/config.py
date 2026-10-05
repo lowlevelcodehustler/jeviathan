@@ -45,6 +45,15 @@ class CalibrationConfig:
 
 
 @dataclass
+class FeedbackConfig:
+    """Decision feedback loop (nightly): log every System One pass to the
+    decision store so outcomes can be reviewed and fed back into training.
+    See docs/user-guide.md, section 'Learning from your decisions'."""
+
+    enabled: bool = False
+
+
+@dataclass
 class LimitsConfig:
     max_questions: int = 64
     max_options_per_choice: int = 255
@@ -57,6 +66,7 @@ class Profile:
     backend: BackendConfig = field(default_factory=BackendConfig)
     sampling: SamplingConfig = field(default_factory=SamplingConfig)
     calibration: CalibrationConfig = field(default_factory=CalibrationConfig)
+    feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
     limits: LimitsConfig = field(default_factory=LimitsConfig)
 
 
@@ -66,6 +76,7 @@ def _build(data: dict, name: str) -> Profile:
         backend=BackendConfig(**dict(data.get("backend") or {})),
         sampling=SamplingConfig(**dict(data.get("sampling") or {})),
         calibration=CalibrationConfig(**dict(data.get("calibration") or {})),
+        feedback=FeedbackConfig(**dict(data.get("feedback") or {})),
         limits=LimitsConfig(**dict(data.get("limits") or {})),
     )
 
