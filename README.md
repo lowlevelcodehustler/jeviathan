@@ -21,8 +21,6 @@ Jev's three pillars, and how we approximate each with open weights:
 | **Parallel sampler** (all questions in one pass) | One prompt ingests the state once; every question is answered in the same completion. Adding questions barely changes latency — same economics as Jev |
 | **RLCD → calibrated confidence** | "RLCD-lite": raw model probabilities + post-hoc **Platt calibration** fitted on your own labeled eval data (`jeviathan/calibration/`), then TypeSafe's exact confidence formula `(n·peak−1)/(n−1)` |
 
-The payoff: when real Jev access lands, you flip one config line and A/B the two behind an identical API.
-
 ## Architecture
 
 ```
@@ -155,15 +153,6 @@ JEVIATHAN_PROFILE=rtx5090 python -m jeviathan.calibration.cli fit \
 
 Crash recovery: each row's full response is appended to `calibration/raw-<profile>.jsonl`; re-run with `--resume` to skip rows already collected (the laptop GPU takes minutes per row), or refit instantly from the dump with `--from-raw <file>`.
 
-## TriniGard integration (the meld, part two)
-
-Jeviathan speaks TypeSafe's contract, so TriniGard gets a new provider adapter (`core/adapters/jeviathan.py`) that:
-- calls `POST /v1/systemone` with per-use-case questions compiled from the trust config,
-- maps `confidence` → existing threshold logic (0.65–0.98) and `fallback_behavior`,
-- logs every decision through the existing WAL audit trail (HMAC-signed, SOC2 exportable).
-
-Cascade pattern: **Jeviathan front door** (classify/route at ~$0 cost, <1s locally) → ordinary code for deterministic cases → full multi-source verification engine for flagged claims. When real Jev access arrives: same adapter, `JEVIATHAN_BASE_URL` pointed at the TypeSafe API — instant A/B.
-
 ## Proven live (2026-09-25, v1.1 logprob on laptop tier)
 
 `strategy: logprob` against the NF4 Llama shim — 12 scoring calls per row in ~90 s (vs ~5 min for one_shot), and smoother distributions than self-reported JSON:
@@ -248,7 +237,6 @@ pytest tests/ -v      # no GPU needed; mock backend
 
 - **Jeviathan is [Apache License 2.0](LICENSE)** — permissive, with an explicit patent grant (which matters in AI infrastructure) and clean contribution terms. Built on open foundations (vLLM, transformers, Qwen/Llama weights); built to give back.
 - Model weights are licensed separately: Qwen3.8 (Apache-2.0), Llama 3.1 (Meta community license). The Apache-2.0 license covers this repo's code only.
-- **TriniGard** (the enterprise verification harness that consumes Jeviathan) stays closed-source in its own repo; the adapter (`core/adapters/jeviathan.py`) is the seam — permissive upstream, proprietary downstream.
 
 ### Tip jar ☕
 
