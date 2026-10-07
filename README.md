@@ -3,8 +3,6 @@
 **A System One compatibility and retrofit layer for open-weight LLMs.** Jeviathan speaks TypeSafe's [System One contract](https://typesafe.ai/blog/introducing-system-one-models-and-jev) — the one behind their Jev model — so you can run typed, calibrated probabilistic decisions today on your own hardware: **Qwen3.8-27B via vLLM on the RTX 5090**, Llama-3.1-8B (or Qwen small) via Ollama/llama.cpp on the laptop.
 
 > Positioning: "compatibility" is at the contract level — same request/response shape, same confidence formula — not a claim of behavioural parity with Jev itself. When real Jev access lands, flip one config line and A/B the two behind an identical API.
->
-> Research background: the Jev deep-research report lives in the TriniGard repo (`docs/JEV_TYPESAFE_DEEP_RESEARCH.md`).
 
 ## Documentation
 
