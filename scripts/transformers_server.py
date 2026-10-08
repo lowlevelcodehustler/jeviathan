@@ -250,24 +250,33 @@ def resolve_adapter_dir(cli_value: str | None = None) -> str | None:
     return None
 
 
+def _reject_control_chars(p: str) -> None:
+    """Fail fast if a resolved path carries control characters."""
+    bad = sorted({c for c in p if ord(c) < 0x20 or ord(c) == 0x7F})
+    if bad:
+        raise SystemExit(
+            f"model dir path contains control characters {bad!r}; refusing to use it "
+            "(check --model-dir, $JEVIATHAN_MODEL_DIR and .jeviathan_model_dir)"
+        )
+
+
 def resolve_model_dir(cli_value: str | None = None) -> str | None:
     """Weights dir resolution order: --model-dir > $JEVIATHAN_MODEL_DIR >
     .jeviathan_model_dir at repo root (gitignored). Returns None if unset.
 
     Anchored at the script's repo root so it works from any CWD (manage.py
     keeps a parallel resolver for its own CLI; keep the two in sync).
+    Fails if the resolved path contains control characters.
     """
-    if cli_value:
-        return cli_value
-    env = os.environ.get("JEVIATHAN_MODEL_DIR")
-    if env:
-        return env
-    local = Path(__file__).resolve().parent.parent / ".jeviathan_model_dir"
-    if local.is_file():
-        p = local.read_text(encoding="utf-8").strip()
-        if p:
-            return p
-    return None
+    p = cli_value or os.environ.get("JEVIATHAN_MODEL_DIR")
+    if not p:
+        local = Path(__file__).resolve().parent.parent / ".jeviathan_model_dir"
+        if local.is_file():
+            p = local.read_text(encoding="utf-8").strip()
+    if not p:
+        return None
+    _reject_control_chars(p)
+    return p
 
 
 def main() -> None:

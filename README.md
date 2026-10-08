@@ -208,6 +208,10 @@ All three answers semantically correct for a double-charge refund ticket; confid
 - **v2 — RLCD-lite SFT:** fine-tune Qwen3.8 (LoRA) on synthetic System One data generated from TriniGard's verified decision logs, then re-fit calibration. This is where a compatibility layer becomes close enough to matter.
 - **Watch:** real Jev waitlist access → A/B harness; Qwen3.8-Max open weights (2.4T/95B) for a multi-GPU tier.
 
+### Nightly backlog
+
+- **Model-dir path validation (done):** `resolve_shim_model_dir` (`scripts/manage.py`) and `resolve_model_dir` (`scripts/transformers_server.py`) reject resolved paths containing control characters with a clear message, so a corrupted `.jeviathan_model_dir` or `$JEVIATHAN_MODEL_DIR` fails fast instead of surfacing as an opaque downstream error.
+
 ## Layout
 
 ```

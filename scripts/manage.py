@@ -53,26 +53,35 @@ VLLM_MODEL_DEFAULT = "Inferact/Qwen3.8-27B-NVFP4"
 VLLM_ALIAS = "jeviathan-qwen3.8-27b"
 
 
+def _reject_control_chars(p: str) -> None:
+    """Fail fast if a resolved path carries control characters."""
+    bad = sorted({c for c in p if ord(c) < 0x20 or ord(c) == 0x7F})
+    if bad:
+        raise SystemExit(
+            f"model dir path contains control characters {bad!r}; refusing to use it "
+            "(check --model-dir, $JEVIATHAN_MODEL_DIR and .jeviathan_model_dir)"
+        )
+
+
 def resolve_shim_model_dir(cli_value: str | None = None) -> str:
     """Local weights dir for the NF4 shim (no machine-specific defaults).
 
     Resolution order: --model-dir arg > $JEVIATHAN_MODEL_DIR env var >
     .jeviathan_model_dir file at repo root (gitignored, one line).
+    Fails if the resolved path contains control characters.
     """
-    if cli_value:
-        return cli_value
-    env = os.environ.get("JEVIATHAN_MODEL_DIR")
-    if env:
-        return env
-    local = REPO / ".jeviathan_model_dir"
-    if local.is_file():
-        p = local.read_text(encoding="utf-8").strip()
-        if p:
-            return p
-    raise SystemExit(
-        "No model dir for the NF4 shim. Pass --model-dir, set $JEVIATHAN_MODEL_DIR, "
-        f"or write your weights path to {REPO / '.jeviathan_model_dir'} (gitignored)."
-    )
+    p = cli_value or os.environ.get("JEVIATHAN_MODEL_DIR")
+    if not p:
+        local = REPO / ".jeviathan_model_dir"
+        if local.is_file():
+            p = local.read_text(encoding="utf-8").strip()
+    if not p:
+        raise SystemExit(
+            "No model dir for the NF4 shim. Pass --model-dir, set $JEVIATHAN_MODEL_DIR, "
+            f"or write your weights path to {REPO / '.jeviathan_model_dir'} (gitignored)."
+        )
+    _reject_control_chars(p)
+    return p
 
 # name -> (port, pidfile, logfile, health_path, default wait seconds)
 SERVICES: dict[str, tuple[int, str, str, str, int]] = {
